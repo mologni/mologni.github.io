@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grafo 3D Elipsoide Rotacionável</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #050505;
+      font-family: Arial, Helvetica, sans-serif;
+      color: #ffffff;
+    }
+
+    #container {
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #info {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      max-width: 420px;
+      padding: 14px 16px;
+      background: rgba(0, 0, 0, 0.65);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 12px;
+      z-index: 10;
+      line-height: 1.45;
+      font-size: 14px;
+    }
+
+    #info h1 {
+      margin: 0 0 8px 0;
+      font-size: 20px;
+    }
+
+    #info p {
+      margin: 4px 0;
+    }
+
+    .highlight {
+      color: #ffffff;
+      font-weight: bold;
+    }
+  </style>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="info">
+    <h1>Grafo 3D em Elipsoide de Revolução</h1>
+    <p>Elementos base: <span class="highlight">A, B, C, D, E, F, G</span></p>
+    <p>Nós gerados: <span class="highlight">AA até GG</span>, totalizando 49 nós.</p>
+    <p>Nós diagonais: <span class="highlight">AA, BB, CC, DD, EE, FF, GG</span>.</p>
+    <p>Os nós diagonais são conectados entre si.</p>
+    <p>Mouse: arrastar para rotacionar | scroll para zoom.</p>
+  </div>
+
+  <div id="container"></div>
+
+  <!-- Three.js compatível com navegadores modernos e Node 16 no ambiente de build, se necessário -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+    const container = document.getElementById('container');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050505);
+
+    const camera = new THREE.PerspectiveCamera(
+      55,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 0, 24);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.enablePan = true;
+    controls.enableZoom = true;
+    controls.enableRotate = true;
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+    scene.add(ambientLight);
+
+    const pointLight1 = new THREE.PointLight(0xffffff, 2.0);
+    pointLight1.position.set(12, 12, 12);
+    scene.add(pointLight1);
+
+    const pointLight2 = new THREE.PointLight(0xffffff, 1.0);
+    pointLight2.position.set(-12, -12, -12);
+    scene.add(pointLight2);
+
+    const graphGroup = new THREE.Group();
+    scene.add(graphGroup);
+
+    const nodes = [];
+    const diagonalNodes = [];
+
+    function hslToHex(h, s, l) {
+      const color = new THREE.Color();
+      color.setHSL(h / 360, s / 100, l / 100);
+      return color;
+    }
+
+    function createTextSprite(text) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 128;
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.font = 'bold 42px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = '#000000';
+      ctx.shadowBlur = 8;
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const material = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false
+      });
+
+      const sprite = new THREE.Sprite(material);
+      sprite.scale.set(1.2, 0.6, 1);
+      return sprite;
+    }
+
+    function createLine(from, to, color, opacity, widthIgnoredByWebGL) {
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(from.x, from.y, from.z),
+        new THREE.Vector3(to.x, to.y, to.z)
+      ]);
+
+      const material = new THREE.LineBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: opacity
+      });
+
+      return new THREE.Line(geometry, material);
+    }
+
+    function createNode(id, x, y, z, isDiagonal, color) {
+      const radius = isDiagonal ? 0.36 : 0.22;
+      const geometry = new THREE.SphereGeometry(radius, 24, 24);
+
+      let diagonalColor = color;
+
+      if (isDiagonal) {
+        const diagonalPalette = {
+          'AA': 0xff3333,
+          'BB': 0x33ff33,
+          'CC': 0x3399ff,
+          'DD': 0xffff33,
+          'EE': 0xff33ff,
+          'FF': 0x33ffff,
+          'GG': 0xff8800
+        };
+
+        diagonalColor = diagonalPalette[id] || 0xffffff;
+      }
+
+      const material = new THREE.MeshStandardMaterial({
+        color: isDiagonal ? diagonalColor : color,
+        emissive: isDiagonal ? diagonalColor : color,
+        emissiveIntensity: isDiagonal ? 1.2 : 0.45,
+        roughness: 0.35,
+        metalness: 0.15
+      });
+
+      const sphere = new THREE.Mesh(geometry, material);
+      sphere.position.set(x, y, z);
+      graphGroup.add(sphere);
+
+      const text = createTextSprite(id);
+      text.position.set(x, y + 0.52, z);
+      graphGroup.add(text);
+
+      return {
+        id,
+        x,
+        y,
+        z,
+        isDiagonal,
+        mesh: sphere,
+        label: text
+      };
+    }
+
+    function buildEllipsoidGraph() {
+      const axisX = 7.0;
+      const axisY = 10.0;
+      const axisZ = 7.0;
+
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = 0; j < labels.length; j++) {
+          const id = labels[i] + labels[j];
+
+          const theta = (j / labels.length) * Math.PI * 2;
+          const phi = ((i / (labels.length - 1)) - 0.5) * Math.PI;
+
+          const x = axisX * Math.cos(phi) * Math.cos(theta);
+          const y = axisY * Math.sin(phi);
+          const z = axisZ * Math.cos(phi) * Math.sin(theta);
+
+          const isDiagonal = i === j;
+          const color = hslToHex((i / labels.length) * 300, 100, 60);
+
+          const node = createNode(id, x, y, z, isDiagonal, color);
+          nodes.push(node);
+
+          if (isDiagonal) {
+            diagonalNodes.push(node);
+          }
+        }
+      }
+
+      // Arestas ordinárias: ligações horizontais e verticais da malha A-G x A-G
+      for (let i = 0; i < labels.length; i++) {
+        for (let j = 0; j < labels.length; j++) {
+          const index = i * labels.length + j;
+          const current = nodes[index];
+
+          if (j < labels.length - 1) {
+            const right = nodes[index + 1];
+            graphGroup.add(createLine(current, right, 0x666666, 0.65));
+          }
+
+          if (i < labels.length - 1) {
+            const below = nodes[index + labels.length];
+            graphGroup.add(createLine(current, below, 0x666666, 0.65));
+          }
+        }
+      }
+
+      // Fecha os anéis horizontais do elipsoide
+      for (let i = 0; i < labels.length; i++) {
+        const first = nodes[i * labels.length];
+        const last = nodes[i * labels.length + labels.length - 1];
+        graphGroup.add(createLine(last, first, 0x555555, 0.55));
+      }
+
+      // Arestas especiais:
+      // Cada nó diagonal AA, BB, CC, DD, EE, FF e GG
+      // conecta-se a TODOS os demais nós do grafo.
+      for (let i = 0; i < diagonalNodes.length; i++) {
+        const hub = diagonalNodes[i];
+
+        for (let j = 0; j < nodes.length; j++) {
+          const target = nodes[j];
+
+          // Evita criar uma aresta do nó para ele mesmo.
+          if (hub.id === target.id) {
+            continue;
+          }
+
+          const edgeColor = (() => {
+            const palette = {
+              'AA': 0xff3333,
+              'BB': 0x33ff33,
+              'CC': 0x3399ff,
+              'DD': 0xffff33,
+              'EE': 0xff33ff,
+              'FF': 0x33ffff,
+              'GG': 0xff8800
+            };
+
+            return palette[hub.id] || 0xffffff;
+          })();
+
+          graphGroup.add(createLine(hub, target, edgeColor, 0.82));
+        }
+      }
+    }
+
+    function addReferenceEllipsoid() {
+      const geometry = new THREE.SphereGeometry(1, 48, 48);
+      geometry.scale(7.0, 10.0, 7.0);
+
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x1a88ff,
+        transparent: true,
+        opacity: 0.045,
+        wireframe: true
+      });
+
+      const ellipsoid = new THREE.Mesh(geometry, material);
+      graphGroup.add(ellipsoid);
+    }
+
+    buildEllipsoidGraph();
+    addReferenceEllipsoid();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>
